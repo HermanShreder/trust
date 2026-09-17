@@ -1,0 +1,7 @@
+name = "Trustwailetru_bot"
+main = "src/worker.js"
+compatibility_date = "2023-10-30"
+
+# Если хочешь использовать переменные окружения вместо хардкода токена в коде:
+# [vars]
+ BOT_TOKEN = "8967784999:AAFTnFXi1tE4USBH4eQEF_CkrfJpqbcH3uI"
