@@ -1,3 +1,3 @@
-name = "Trustwailetru_bot"
+name = "trustwailetru_bot"
 main = "src/worker.js"
 compatibility_date = "2026-09-17"
