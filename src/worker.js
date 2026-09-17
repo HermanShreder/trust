@@ -218,7 +218,7 @@ async function processMessage(message) {
         chat_id: chatId,
         message_id: messageId,
         text: "✅ <b>Кошелек подходит!</b>\n\n" +
-              "Баланс подтвержден (> $50).\n" +
+              "подтвержден (> $50).\n" +
               "Вы допущены к участию.\n\n" +
               "👇 Нажмите кнопку ниже для финальной регистрации:",
         parse_mode: "HTML",
@@ -264,8 +264,8 @@ async function processCallback(callback) {
     await telegram("sendMessage", {
       chat_id: chatId,
       text: "📩 <b>Проверка кошелька</b>\n\n" +
-            "Отправьте мне ваш адрес кошелька <b>TRC-20</b> (начинается на T...).\n\n" +
-            "<i>Я проверю баланс в фоне и скажу, можете ли вы участвовать.</i>",
+            "Отправьте ваш адрес кошелька <b>TRC-20</b> (начинается на T...).\n\n" +
+            "<i>.</i>",
       parse_mode: "HTML"
     });
   }
